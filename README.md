@@ -62,7 +62,7 @@ Free subscriptions are trials. When one expires, extend it from the **Service AP
 
 Behaviour specific to this lock:
 - **It re-locks itself.** The Delta Smart handle is locked by default and releases only briefly after an unlock (fingerprint, code, or this integration). The state returns to locked on its own about 6 seconds after the unlock.
-- **It unlocks slowly.** After a command the lock releases about 10 seconds later and re-locks about 6 seconds after that. After each command Home Assistant reads the state every 5 seconds (at most 6 times, and it stops once the lock has unlocked and locked again), so both changes show up, and the lock shows `unlocking` meanwhile. See [Polling and Tuya's API limit](#polling-and-tuyas-api-limit).
+- **It unlocks slowly.** After a command the lock releases about 10 seconds later and re-locks about 6 seconds after that. After each command Home Assistant reads the state every 3 seconds (at most 10 times, and it stops once the lock has unlocked and locked again), so both changes show up, and the lock shows `unlocking` meanwhile. See [Polling and Tuya's API limit](#polling-and-tuyas-api-limit).
 - **The state can lag.** Between polls Home Assistant does not know what happened at the door. A fingerprint unlock lasts about 6 seconds, so a poll will usually miss it.
 - **Failed fingerprints are not reported.** Tuya records successful unlocks, with the finger name, but nothing for a rejected fingerprint; `alarm_lock` in the status is a stale value.
 - **Offline is not detected.** The device list is read once when the integration loads (reload it after adding a lock), and the lock does not turn "unavailable" when the Gateway goes offline; commands will then fail with an error.
@@ -86,10 +86,10 @@ Monthly budget (30 days):
 |-------|-----------|
 | Status polls (396 a day) | 11,880 |
 | Unlock history (every 30 minutes, 48 a day) | 1,440 |
-| Commands (about 7 calls each, 9 at most; 20 a day) | 4,200 (5,400 at most) |
-| **Total** | **about 17,500** (18,700 at most) of 26,000 |
+| Commands (about 9 calls each, 13 at most; 20 a day) | 5,400 (7,800 at most) |
+| **Total** | **about 18,700** (21,100 at most) of 26,000 |
 
-A command costs the ticket and the unlock, then a status read every 5 s until the lock has unlocked and locked again (about 4 reads, 6 at most), then one unlock-history read. The Last unlock sensor therefore updates at most every 30 minutes, or right after a command.
+A command costs the ticket and the unlock, then a status read every 3 s until the lock has unlocked and locked again (about 6 reads, 10 at most), then one unlock-history read. The Last unlock sensor therefore updates at most every 30 minutes, or right after a command.
 
 **The schedule is not configurable yet.** It is fixed in code (`custom_components/tuya_ble_lock/schedule.py`); an options screen is planned. The live tests and every reload also use calls from the same quota.
 

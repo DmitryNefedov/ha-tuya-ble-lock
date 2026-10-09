@@ -14,10 +14,10 @@ from .coordinator import TuyaLockConfigEntry
 from .entity import TuyaLockEntity
 
 # The Lock unlocks about 10 s after a command and re-locks about 6 s later, so after a
-# command the state is read every 5 s, at most 6 times (not left to the next poll). The
+# command the state is read every 3 s, at most 10 times (not left to the next poll). The
 # reads stop early once the lock has unlocked and locked again. Each read costs an API call.
-FOLLOW_UP_EVERY = 5
-FOLLOW_UP_CHECKS = 6
+FOLLOW_UP_EVERY = 3
+FOLLOW_UP_CHECKS = 10
 
 
 async def async_setup_entry(

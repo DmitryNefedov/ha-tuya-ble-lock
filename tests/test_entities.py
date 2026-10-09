@@ -91,7 +91,7 @@ async def test_lock_services_call_operate(hass, api, entry, service, open_):
 
 
 async def _command_then_reads(hass, freezer, api, service, motors):
-    """Run a command, then one status read every 5 s returning `motors` in turn.
+    """Run a command, then one status read every 3 s returning `motors` in turn.
 
     Call after `_at(12)` (quiet hours, so no regular poll interferes). Returns the lock
     state after the command and after each read.
@@ -102,7 +102,7 @@ async def _command_then_reads(hass, freezer, api, service, motors):
     states = [hass.states.get(LOCK).state]
     for n, motor in enumerate(motors, start=1):
         api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": motor}
-        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5 * n))
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3 * n))
         await hass.async_block_till_done()
         states.append(hass.states.get(LOCK).state)
     return states
@@ -123,12 +123,12 @@ async def test_unlock_stops_checking_once_it_has_unlocked_and_locked_again(
     assert api.get_status.await_count == 4  # no more checks, back to the normal schedule
 
 
-async def test_unlock_that_never_happens_gives_up_after_six_checks(hass, freezer, api, entry):
+async def test_unlock_that_never_happens_gives_up_after_ten_checks(hass, freezer, api, entry):
     await _at(hass, freezer, 12)
     await _setup(hass, entry)
-    states = await _command_then_reads(hass, freezer, api, "unlock", [False] * 8)
-    assert states == ["unlocking"] * 6 + ["locked"] * 3
-    assert api.get_status.await_count == 6
+    states = await _command_then_reads(hass, freezer, api, "unlock", [False] * 12)
+    assert states == ["unlocking"] * 10 + ["locked"] * 3
+    assert api.get_status.await_count == 10
     assert api.last_unlock.await_count == 1
 
 
