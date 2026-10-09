@@ -52,6 +52,13 @@ def test_sign_token_request_known_vector():
     )
 
 
+def test_sign_sorts_query_parameters_by_name():
+    args = ("abc123", "secret456", "GET")
+    assert sign(*args, "/v1.0/x?size=50&type=7&end_time=2&start_time=1", "", "1700000000000", "tok") == sign(
+        *args, "/v1.0/x?end_time=2&size=50&start_time=1&type=7", "", "1700000000000", "tok"
+    )
+
+
 def test_sign_authenticated_request_known_vector():
     assert (
         sign("abc123", "secret456", "POST", "/v1.0/x", "{}", "1700000000000", "tok")

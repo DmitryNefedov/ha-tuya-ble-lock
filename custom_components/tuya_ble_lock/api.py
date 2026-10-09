@@ -69,7 +69,10 @@ def sign(
     token: str = "",
 ) -> str:
     content_hash = hashlib.sha256(body.encode()).hexdigest()
-    string_to_sign = "\n".join([method, content_hash, "", path])
+    base, _, query = path.partition("?")
+    if query:  # Tuya signs query parameters sorted by name
+        base += "?" + "&".join(sorted(query.split("&"), key=lambda p: p.partition("=")[0]))
+    string_to_sign = "\n".join([method, content_hash, "", base])
     return (
         hmac.new(
             secret.encode(),
