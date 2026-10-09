@@ -67,8 +67,8 @@ These talk to Tuya Cloud and **physically unlock then re-lock a real Lock**. The
 
 ```
 TUYA_ACCESS_ID=... TUYA_ACCESS_SECRET=... TUYA_REGION=eu TUYA_DEVICE_ID=... \
-  scripts/live.sh                # all four tests
-  scripts/live.sh -k status      # just one: token, status, remote or physical
+  scripts/live.sh                # all five tests
+  scripts/live.sh -k status      # just one: token, status, remote, unlock or lock
 ```
 
 `TUYA_REGION` is one of `cn`, `us-west`, `us-east`, `eu`, `eu-west`, `in`. The tests print the Lock's data points; the physical cycle refuses to start unless the Lock reports Locked, and always attempts to lock on exit.
