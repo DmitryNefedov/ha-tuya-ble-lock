@@ -81,8 +81,8 @@ async def test_event_logs(api, device_id, capsys):
                 "GET", f"/v1.0/devices/{device_id}/logs?type=7&{window}&query_type=1&size=100&last_row_key={last_key}"
             )
             logs += result.get("logs", [])
-            last_key = result.get("current_row_key", "")
-            if not result.get("has_next"):
+            last_key = result.get("next_row_key", "")
+            if not (result.get("has_next") and last_key):
                 break
         counts = {}
         for log in logs:
