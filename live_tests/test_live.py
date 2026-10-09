@@ -48,6 +48,12 @@ async def test_status_dump(api, device_id, capsys):
     assert status
 
 
+async def test_last_unlock(api, device_id, capsys):
+    """Same call the Last unlock sensor makes. Fingerprint unlocks should show the finger's name."""
+    with capsys.disabled():
+        print(f"\nLast unlock (last 7 days): {await api.last_unlock(device_id)}")
+
+
 async def test_remote_unlock_enabled(api, device_id):
     assert await api.remote_unlock_enabled(device_id), REMOTE_OFF
 

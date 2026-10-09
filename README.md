@@ -58,10 +58,13 @@ Free subscriptions are trials. When one expires, extend it from the **Service AP
 | `sensor` Battery | From `residual_electricity`. The reading is noisy (it moves several points while the motor runs). |
 | `binary_sensor` Door | From `closed_opened`. This lock reports `unknown`, so expect an unknown state. |
 | `binary_sensor` Double locked | From `reverse_lock`. |
+| `sensor` Last unlock | When and how the lock was last unlocked in the last 7 days. Attributes: `method` (`unlock_fingerprint`, `unlock_phone_remote`, `unlock_ble`...), `name` (the finger or code name, for example "Left Thumb") and `user`. Read from Tuya's unlock history, one extra API call per poll. |
 
 Behaviour specific to this lock:
 - **It re-locks itself.** The Delta Smart handle is locked by default and releases only briefly after an unlock (fingerprint, code, or this integration). The state returns to locked on its own, roughly a minute later in the cloud.
-- **The cloud reports late.** Home Assistant checks the state 5 seconds after a command, then polls (default every 60 s, 30–300 s in the integration's options). The state can lag behind what you see at the door.
+- **It unlocks slowly.** After a command the lock releases about 10 seconds later and re-locks about 6 seconds after that. Home Assistant re-reads the state every 5 seconds for 30 seconds after each command, so the unlock and re-lock both show up within a few seconds. That is 6 extra status calls (and 6 extra unlock-history calls) per command.
+- **The cloud reports late.** Outside that window Home Assistant polls (default every 60 s, 30–300 s in the integration's options), so the state can lag behind what you see at the door.
+- **Failed fingerprints are not reported.** Tuya records successful unlocks, with the finger name, but nothing for a rejected fingerprint; `alarm_lock` in the status is a stale value.
 - **Offline is not detected.** The device list is read once when the integration loads (reload it after adding a lock), and the lock does not turn "unavailable" when the Gateway goes offline; commands will then fail with an error.
 
 ## How locking works
@@ -116,7 +119,7 @@ export TUYA_REGION=eu                # cn, us-west, us-east, eu, eu-west or in
 export TUYA_DEVICE_ID=...            # the lock's device ID
 
 scripts/live.sh                      # all tests
-scripts/live.sh -k status            # one test: token, status, remote, send_unlock, send_lock or event_logs
+scripts/live.sh -k status            # one test: token, status, last_unlock, remote, send_unlock, send_lock or event_logs
 ```
 
 Without the four variables every test skips and says which are missing.
@@ -127,6 +130,7 @@ Without the four variables every test skips and says which are missing.
 |------|-----------------|----------------|
 | `token` | no | Credentials and Region work, and your lock is in the account's `jtmspro` device list. |
 | `status` | no | Prints all of the lock's data points. |
+| `last_unlock` | no | Prints the lock's most recent unlock from the unlock history (what the Last unlock sensor shows). |
 | `remote` | no | Remote Unlock is enabled on the lock. |
 | `send_unlock` | **yes** | Sends an unlock. The handle releases for a few seconds, then re-locks itself. Prints which data points changed. |
 | `send_lock` | no (it is already locked) | Sends a lock and prints which data points changed. |

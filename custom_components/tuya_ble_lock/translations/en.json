@@ -46,6 +46,11 @@
       "double_locked": {
         "name": "Double locked"
       }
+    },
+    "sensor": {
+      "last_unlock": {
+        "name": "Last unlock"
+      }
     }
   }
 }

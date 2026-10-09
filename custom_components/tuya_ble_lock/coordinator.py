@@ -36,6 +36,7 @@ class TuyaLockCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         )
         self.api = api
         self.locks: dict[str, dict[str, Any]] = {}
+        self.last_unlocks: dict[str, dict[str, Any] | None] = {}
 
     async def async_load_locks(self) -> None:
         """Fetch the device list. Done once at setup, not on every poll."""
@@ -46,6 +47,12 @@ class TuyaLockCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         try:
-            return {id_: await self.api.get_status(id_) for id_ in self.locks}
+            data = {id_: await self.api.get_status(id_) for id_ in self.locks}
         except TuyaError as err:
             raise UpdateFailed(f"Error talking to Tuya Cloud: {err}") from err
+        for id_ in self.locks:
+            try:
+                self.last_unlocks[id_] = await self.api.last_unlock(id_)
+            except TuyaError as err:
+                _LOGGER.debug("Could not read the unlock history of %s: %s", id_, err)
+        return data

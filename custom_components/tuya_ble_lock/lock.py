@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 from homeassistant.components.lock import LockEntity
@@ -12,8 +13,10 @@ from .api import TuyaError, is_locked
 from .coordinator import TuyaLockConfigEntry
 from .entity import TuyaLockEntity
 
-# The Lock reports its new state a few seconds after the Gateway relays the command.
-REFRESH_DELAY = 5
+# The Lock unlocks about 10 s after a command and re-locks about 6 s later, so the
+# state is followed for 30 s instead of waiting for the next regular poll.
+REFRESH_EVERY = 5
+REFRESH_COUNT = 6
 
 
 async def async_setup_entry(
@@ -46,15 +49,20 @@ class TuyaLock(TuyaLockEntity, LockEntity):
             raise HomeAssistantError(
                 f"Could not {'unlock' if unlock else 'lock'} {self._name}: {err}"
             ) from err
+        self._schedule_refresh(REFRESH_COUNT)
+
+    def _schedule_refresh(self, remaining: int) -> None:
         if self._cancel_refresh:
             self._cancel_refresh()
         self._cancel_refresh = async_call_later(
-            self.hass, REFRESH_DELAY, self._refresh_after_command
+            self.hass, REFRESH_EVERY, partial(self._refresh_after_command, remaining)
         )
 
-    async def _refresh_after_command(self, _now: Any) -> None:
+    async def _refresh_after_command(self, remaining: int, _now: Any) -> None:
         self._cancel_refresh = None
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()
+        if remaining > 1:
+            self._schedule_refresh(remaining - 1)
 
     async def async_will_remove_from_hass(self) -> None:
         if self._cancel_refresh:

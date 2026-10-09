@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -13,12 +13,13 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from custom_components.tuya_ble_lock.api import TuyaApiError, TuyaConnectionError
 from custom_components.tuya_ble_lock.const import DOMAIN
 
-from .conftest import LOCK_ID, STATUS_LOCKED
+from .conftest import LAST_UNLOCK, LOCK_ID, STATUS_LOCKED
 
 LOCK = "lock.front_door"
 BATTERY = "sensor.front_door_battery"
 DOOR = "binary_sensor.front_door_door"
 DOUBLE = "binary_sensor.front_door_double_locked"
+LAST_UNLOCK_SENSOR = "sensor.front_door_last_unlock"
 
 
 async def _setup(hass, entry):
@@ -74,17 +75,50 @@ async def test_no_locks_creates_no_entities(hass, api, entry):
 
 
 @pytest.mark.parametrize(("service", "open_"), [("unlock", True), ("lock", False)])
-async def test_lock_services_call_operate_and_refresh(hass, api, entry, service, open_):
+async def test_lock_services_call_operate(hass, api, entry, service, open_):
     await _setup(hass, entry)
     api.get_status.reset_mock()
     await hass.services.async_call("lock", service, {"entity_id": LOCK}, blocking=True)
     api.operate.assert_awaited_once_with(LOCK_ID, open_)
     api.get_status.assert_not_awaited()  # the Lock needs a few seconds to report
-    api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": open_}
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
-    await hass.async_block_till_done()
-    api.get_status.assert_awaited()
-    assert hass.states.get(LOCK).state == ("unlocked" if open_ else "locked")
+
+
+async def test_state_is_followed_for_30_seconds_after_a_command(hass, api, entry):
+    """The Lock unlocks about 10 s after the command and re-locks about 6 s later."""
+    await _setup(hass, entry)
+    api.get_status.reset_mock()
+    await hass.services.async_call("lock", "unlock", {"entity_id": LOCK}, blocking=True)
+    seen = []
+    for step, motor in enumerate([False, False, True, False, False, False, False, False], start=1):
+        api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": motor}
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5 * step + 1))
+        await hass.async_block_till_done()
+        seen.append(hass.states.get(LOCK).state)
+    assert "unlocked" in seen
+    assert seen[3] == "locked"  # the re-lock is picked up on the next refresh, not a minute later
+    assert api.get_status.await_count == 6  # then back to the normal poll interval
+
+
+async def test_last_unlock_sensor(hass, api, entry):
+    await _setup(hass, entry)
+    state = hass.states.get(LAST_UNLOCK_SENSOR)
+    assert state.state == datetime.fromtimestamp(LAST_UNLOCK["time"] // 1000, UTC).isoformat()
+    assert state.attributes["method"] == LAST_UNLOCK["method"]
+    assert state.attributes["name"] == "Left Thumb"
+    assert er.async_get(hass).async_get(LAST_UNLOCK_SENSOR).unique_id == f"{LOCK_ID}_last_unlock"
+
+
+async def test_last_unlock_sensor_unknown_without_entries(hass, api, entry):
+    api.last_unlock.return_value = None
+    await _setup(hass, entry)
+    assert hass.states.get(LAST_UNLOCK_SENSOR).state == STATE_UNKNOWN
+
+
+async def test_last_unlock_failure_does_not_break_the_lock(hass, api, entry):
+    api.last_unlock.side_effect = TuyaApiError(1108, "uri path invalid")
+    await _setup(hass, entry)
+    assert hass.states.get(LOCK).state == "locked"
+    assert hass.states.get(LAST_UNLOCK_SENSOR).state == STATE_UNKNOWN
 
 
 async def test_rejected_command_raises(hass, api, entry):

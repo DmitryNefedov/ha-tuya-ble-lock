@@ -30,6 +30,7 @@ _CREDENTIAL_ERROR_CODES = {1004, 2009}  # sign invalid, clientId invalid
 _TIMEOUT = aiohttp.ClientTimeout(total=15)
 _TOKEN_INVALID = 1010
 _PAGE_SIZE = 50
+_UNLOCK_HISTORY_MS = 7 * 24 * 3600 * 1000
 
 
 class TuyaError(Exception):
@@ -133,6 +134,25 @@ class TuyaLockApi:
             item.get("remote_unlock_type") == "remoteUnlockWithoutPwd" and item.get("open")
             for item in result
         )
+
+    async def last_unlock(self, device_id: str) -> dict[str, Any] | None:
+        """The most recent unlock (fingerprint, code, phone...) in the last 7 days."""
+        now = int(time.time() * 1000)
+        result = await self._request(
+            "GET",
+            f"/v1.1/devices/{device_id}/door-lock/open-logs"
+            f"?page_no=1&page_size=10&start_time={now - _UNLOCK_HISTORY_MS}&end_time={now}",
+        )
+        logs = result.get("logs", [])
+        if not logs:
+            return None
+        newest = max(logs, key=lambda log: log["update_time"])
+        return {
+            "time": newest["update_time"],
+            "method": newest["status"]["code"],
+            "name": newest.get("unlock_name") or None,
+            "user": newest.get("nick_name") or None,
+        }
 
     async def operate(self, device_id: str, unlock: bool) -> None:
         ticket = await self._request(

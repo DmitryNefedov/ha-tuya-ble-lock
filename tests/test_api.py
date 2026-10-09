@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import re
+
 import aiohttp
 import pytest
 from aioresponses import aioresponses
@@ -283,3 +285,35 @@ async def test_operate_rejected(api, mocked):
 )
 def test_is_locked(status, expected):
     assert is_locked(status) is expected
+
+
+OPEN_LOGS_URL = re.compile(rf"^{re.escape(BASE)}/v1\.1/devices/d1/door-lock/open-logs\?.*$")
+
+
+async def test_last_unlock_returns_the_newest_entry(api, mocked):
+    mocked.get(TOKEN_URL, payload=TOKEN_OK)
+    mocked.get(
+        OPEN_LOGS_URL,
+        payload={
+            "success": True,
+            "result": {
+                "logs": [
+                    {"update_time": 100, "status": {"code": "unlock_phone_remote", "value": "1"}, "unlock_name": "", "nick_name": "a@b.c"},
+                    {"update_time": 300, "status": {"code": "unlock_fingerprint", "value": "0"}, "unlock_name": "Left Thumb", "nick_name": ""},
+                    {"update_time": 200, "status": {"code": "unlock_ble", "value": "1"}, "unlock_name": ""},
+                ]
+            },
+        },
+    )
+    assert await api.last_unlock("d1") == {
+        "time": 300,
+        "method": "unlock_fingerprint",
+        "name": "Left Thumb",
+        "user": None,
+    }
+
+
+async def test_last_unlock_none_when_no_entries(api, mocked):
+    mocked.get(TOKEN_URL, payload=TOKEN_OK)
+    mocked.get(OPEN_LOGS_URL, payload={"success": True, "result": {"logs": []}})
+    assert await api.last_unlock("d1") is None

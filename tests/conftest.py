@@ -23,6 +23,14 @@ STATUS_LOCKED = {
 }
 
 
+LAST_UNLOCK = {
+    "time": 1791521602535,
+    "method": "unlock_fingerprint",
+    "name": "Left Thumb",
+    "user": None,
+}
+
+
 @pytest.fixture(autouse=True)
 def _enable_custom_integrations(enable_custom_integrations):
     return
@@ -45,6 +53,7 @@ def api():
     mock = AsyncMock()
     mock.list_locks.return_value = [LOCK_INFO]
     mock.get_status.return_value = dict(STATUS_LOCKED)
+    mock.last_unlock.return_value = dict(LAST_UNLOCK)
     with (
         patch("custom_components.tuya_ble_lock.TuyaLockApi", return_value=mock),
         patch("custom_components.tuya_ble_lock.config_flow.TuyaLockApi", return_value=mock),
