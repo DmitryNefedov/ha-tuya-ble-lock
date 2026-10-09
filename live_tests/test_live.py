@@ -65,26 +65,37 @@ async def test_send_lock(api, device_id):
 
 
 async def test_event_logs(api, device_id, capsys):
-    """Read-only probe: do Tuya's log endpoints record Lock events (failed fingerprint, unlocks)?
-
-    Candidate paths come from Tuya's docs and are unconfirmed; each result or error is printed.
-    """
+    """Read-only: which Lock events do Tuya's logs record (failed fingerprint, unlocks, alarms)?"""
     now_ms = int(time.time() * 1000)
-    day_ms = 24 * 3600 * 1000
-    window_ms = f"start_time={now_ms - day_ms}&end_time={now_ms}"
-    window_s = f"start_time={(now_ms - day_ms) // 1000}&end_time={now_ms // 1000}"
-    candidates = [
-        f"/v1.0/devices/{device_id}/logs?type=7&{window_ms}&query_type=1&size=50",
-        f"/v1.0/devices/{device_id}/logs?type=8&{window_ms}&query_type=1&size=50",
-        f"/v1.1/devices/{device_id}/door-lock/open-logs?page_no=1&page_size=20&{window_ms}",
-        f"/v1.1/devices/{device_id}/door-lock/open-logs?page_no=1&page_size=20&{window_s}",
-        f"/v1.0/smart-lock/devices/{device_id}/open-logs?page_no=1&page_size=20&{window_ms}",
-        f"/v1.0/smart-lock/devices/{device_id}/alarm-logs?page_no=1&page_size=20&{window_ms}",
-    ]
+    window = f"start_time={now_ms - 24 * 3600 * 1000}&end_time={now_ms}"
+    noisy = {"residual_electricity"}
+
+    def when(ms):
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ms / 1000))
+
     with capsys.disabled():
-        for path in candidates:
-            try:
-                result = await api._request("GET", path)
-                print(f"\nOK   {path}\n{json.dumps(result, indent=2, sort_keys=True)[:2000]}")
-            except Exception as err:
-                print(f"\nFAIL {path}\n     {err}")
+        print("\nData point changes, last 24 h (/v1.0/devices/{id}/logs?type=7):")
+        logs, last_key = [], ""
+        for _ in range(10):
+            result = await api._request(
+                "GET", f"/v1.0/devices/{device_id}/logs?type=7&{window}&query_type=1&size=100&last_row_key={last_key}"
+            )
+            logs += result.get("logs", [])
+            last_key = result.get("current_row_key", "")
+            if not result.get("has_next"):
+                break
+        counts = {}
+        for log in logs:
+            counts[log["code"]] = counts.get(log["code"], 0) + 1
+        print(f"  counts by data point: {json.dumps(counts, sort_keys=True)}")
+        for log in sorted(logs, key=lambda x: x["event_time"]):
+            if log["code"] not in noisy:
+                print(f"  {when(log['event_time'])}  {log['code']} = {log['value']}")
+
+        print("\nUnlock history (/v1.1/devices/{id}/door-lock/open-logs):")
+        result = await api._request(
+            "GET", f"/v1.1/devices/{device_id}/door-lock/open-logs?page_no=1&page_size=50&{window}"
+        )
+        for log in sorted(result.get("logs", []), key=lambda x: x["update_time"]):
+            status = log["status"]
+            print(f"  {when(log['update_time'])}  {status['code']} = {status['value']}  {log.get('unlock_name') or ''}")
