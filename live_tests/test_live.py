@@ -62,3 +62,29 @@ async def test_send_lock(api, device_id):
     """Tuya may reject this for a Lock that is locked by default; that rejection is the finding."""
     assert await api.remote_unlock_enabled(device_id), REMOTE_OFF
     await send_and_watch(api, device_id, False)
+
+
+async def test_event_logs(api, device_id, capsys):
+    """Read-only probe: do Tuya's log endpoints record Lock events (failed fingerprint, unlocks)?
+
+    Candidate paths come from Tuya's docs and are unconfirmed; each result or error is printed.
+    """
+    now_ms = int(time.time() * 1000)
+    day_ms = 24 * 3600 * 1000
+    window_ms = f"start_time={now_ms - day_ms}&end_time={now_ms}"
+    window_s = f"start_time={(now_ms - day_ms) // 1000}&end_time={now_ms // 1000}"
+    candidates = [
+        f"/v1.0/devices/{device_id}/logs?type=7&{window_ms}&query_type=1&size=50",
+        f"/v1.0/devices/{device_id}/logs?type=8&{window_ms}&query_type=1&size=50",
+        f"/v1.1/devices/{device_id}/door-lock/open-logs?page_no=1&page_size=20&{window_ms}",
+        f"/v1.1/devices/{device_id}/door-lock/open-logs?page_no=1&page_size=20&{window_s}",
+        f"/v1.0/smart-lock/devices/{device_id}/open-logs?page_no=1&page_size=20&{window_ms}",
+        f"/v1.0/smart-lock/devices/{device_id}/alarm-logs?page_no=1&page_size=20&{window_ms}",
+    ]
+    with capsys.disabled():
+        for path in candidates:
+            try:
+                result = await api._request("GET", path)
+                print(f"\nOK   {path}\n{json.dumps(result, indent=2, sort_keys=True)[:2000]}")
+            except Exception as err:
+                print(f"\nFAIL {path}\n     {err}")

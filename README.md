@@ -116,7 +116,7 @@ export TUYA_REGION=eu                # cn, us-west, us-east, eu, eu-west or in
 export TUYA_DEVICE_ID=...            # the lock's device ID
 
 scripts/live.sh                      # all tests
-scripts/live.sh -k status            # one test: token, status, remote, send_unlock or send_lock
+scripts/live.sh -k status            # one test: token, status, remote, send_unlock, send_lock or event_logs
 ```
 
 Without the four variables every test skips and says which are missing.
@@ -130,6 +130,7 @@ Without the four variables every test skips and says which are missing.
 | `remote` | no | Remote Unlock is enabled on the lock. |
 | `send_unlock` | **yes** | Sends an unlock. The handle releases for a few seconds, then re-locks itself. Prints which data points changed. |
 | `send_lock` | no (it is already locked) | Sends a lock and prints which data points changed. |
+| `event_logs` | no | Read-only probe of Tuya's log endpoints (last 24 h) to see whether unlock and failed-fingerprint events are recorded. |
 
 Expected results on the Aldi Delta Smart lock: both commands are accepted; `lock_motor_state` goes `false → true` after an unlock and back to `false` after a lock. If nothing in the status changes, the cloud has not heard back from the lock yet; run `status` again after a minute.
 
