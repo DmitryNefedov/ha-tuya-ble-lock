@@ -6,6 +6,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN, STATE_UNAVAILABLE
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
@@ -31,6 +32,15 @@ async def test_entities_from_status(hass, api, entry):
     assert hass.states.get(BATTERY).state == "87"
     assert hass.states.get(DOOR).state == STATE_OFF
     assert hass.states.get(DOUBLE).state == STATE_OFF
+
+
+async def test_unique_ids(hass, api, entry):
+    await _setup(hass, entry)
+    registry = er.async_get(hass)
+    assert registry.async_get(LOCK).unique_id == LOCK_ID
+    assert registry.async_get(BATTERY).unique_id == f"{LOCK_ID}_battery"
+    assert registry.async_get(DOOR).unique_id == f"{LOCK_ID}_door"
+    assert registry.async_get(DOUBLE).unique_id == f"{LOCK_ID}_double_locked"
 
 
 async def test_device_registry(hass, api, entry):
@@ -69,10 +79,12 @@ async def test_lock_services_call_operate_and_refresh(hass, api, entry, service,
     api.get_status.reset_mock()
     await hass.services.async_call("lock", service, {"entity_id": LOCK}, blocking=True)
     api.operate.assert_awaited_once_with(LOCK_ID, open_)
-    await hass.async_block_till_done()
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=15))
+    api.get_status.assert_not_awaited()  # the Lock needs a few seconds to report
+    api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": open_}
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
     await hass.async_block_till_done()
     api.get_status.assert_awaited()
+    assert hass.states.get(LOCK).state == ("unlocked" if open_ else "locked")
 
 
 async def test_rejected_command_raises(hass, api, entry):

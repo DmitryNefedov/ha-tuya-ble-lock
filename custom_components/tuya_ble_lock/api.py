@@ -20,6 +20,13 @@ REGIONS = {
 }
 
 LOCK_CATEGORY = "jtmspro"
+
+DP_LOCK_MOTOR_STATE = "lock_motor_state"
+DP_BATTERY = "residual_electricity"
+DP_DOOR = "closed_opened"
+DP_DOUBLE_LOCK = "reverse_lock"
+
+_CREDENTIAL_ERROR_CODES = {1004, 2009}  # sign invalid, clientId invalid
 _TIMEOUT = aiohttp.ClientTimeout(total=15)
 _TOKEN_INVALID = 1010
 _PAGE_SIZE = 50
@@ -46,13 +53,19 @@ class TuyaApiError(TuyaError):
         self.msg = msg
 
 
+def is_locked(status: dict[str, Any]) -> bool | None:
+    """lock_motor_state is True while the bolt is retracted (confirmed on qxjx5jms)."""
+    motor = status.get(DP_LOCK_MOTOR_STATE)
+    return not motor if isinstance(motor, bool) else None
+
+
 def sign(
     client_id: str,
     secret: str,
     method: str,
     path: str,
     body: str,
-    t: str,
+    timestamp: str,
     token: str = "",
 ) -> str:
     content_hash = hashlib.sha256(body.encode()).hexdigest()
@@ -60,7 +73,7 @@ def sign(
     return (
         hmac.new(
             secret.encode(),
-            (client_id + token + t + string_to_sign).encode(),
+            (client_id + token + timestamp + string_to_sign).encode(),
             hashlib.sha256,
         )
         .hexdigest()
@@ -118,28 +131,41 @@ class TuyaLockApi:
             for item in result
         )
 
-    async def operate(self, device_id: str, open_: bool) -> None:
+    async def operate(self, device_id: str, unlock: bool) -> None:
         ticket = await self._request(
             "POST", f"/v1.0/devices/{device_id}/door-lock/password-ticket", {}
         )
         await self._request(
             "POST",
             f"/v1.0/smart-lock/devices/{device_id}/password-free/door-operate",
-            {"ticket_id": ticket["ticket_id"], "open": open_},
+            {"ticket_id": ticket["ticket_id"], "open": unlock},
         )
+
+    def _headers(
+        self, method: str, path: str, body: str, token: str = ""
+    ) -> dict[str, str]:
+        timestamp = str(int(time.time() * 1000))
+        headers = {
+            "client_id": self._client_id,
+            "sign": sign(
+                self._client_id, self._secret, method, path, body, timestamp, token
+            ),
+            "t": timestamp,
+            "sign_method": "HMAC-SHA256",
+        }
+        if token:
+            headers["access_token"] = token
+        if body:
+            headers["Content-Type"] = "application/json"
+        return headers
 
     async def _fetch_token(self) -> str:
         path = "/v1.0/token?grant_type=1"
-        t = str(int(time.time() * 1000))
-        headers = {
-            "client_id": self._client_id,
-            "sign": sign(self._client_id, self._secret, "GET", path, "", t),
-            "t": t,
-            "sign_method": "HMAC-SHA256",
-        }
-        data = await self._send("GET", path, None, headers)
+        data = await self._send("GET", path, None, self._headers("GET", path, ""))
         if not data.get("success"):
-            raise TuyaAuthError(f"Tuya rejected the credentials: {data.get('msg')}")
+            if data.get("code") in _CREDENTIAL_ERROR_CODES:
+                raise TuyaAuthError(f"Tuya rejected the credentials: {data.get('msg')}")
+            raise TuyaApiError(data.get("code"), data.get("msg"))
         result = data["result"]
         self._token = result["access_token"]
         self._token_expires = time.time() + result.get("expire_time", 7200) - 300
@@ -153,17 +179,9 @@ class TuyaLockApi:
         else:
             token = await self._fetch_token()
         body_str = json.dumps(body) if body is not None else ""
-        t = str(int(time.time() * 1000))
-        headers = {
-            "client_id": self._client_id,
-            "access_token": token,
-            "sign": sign(self._client_id, self._secret, method, path, body_str, t, token),
-            "t": t,
-            "sign_method": "HMAC-SHA256",
-        }
-        if body_str:
-            headers["Content-Type"] = "application/json"
-        data = await self._send(method, path, body_str, headers)
+        data = await self._send(
+            method, path, body_str, self._headers(method, path, body_str, token)
+        )
         if data.get("success"):
             return data.get("result")
         if data.get("code") == _TOKEN_INVALID and retry:

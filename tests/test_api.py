@@ -1,14 +1,18 @@
 """Offline unit tests for the Tuya Cloud client."""
 
+from types import SimpleNamespace
+
 import aiohttp
 import pytest
 from aioresponses import aioresponses
 
+import custom_components.tuya_ble_lock.api as api_module
 from custom_components.tuya_ble_lock.api import (
     TuyaApiError,
     TuyaAuthError,
     TuyaConnectionError,
     TuyaLockApi,
+    is_locked,
     sign,
 )
 
@@ -71,6 +75,23 @@ async def test_authenticate_bad_credentials(api, mocked):
         await api.authenticate()
 
 
+async def test_authenticate_invalid_client_id(api, mocked):
+    mocked.get(TOKEN_URL, payload={"success": False, "code": 2009, "msg": "clientId is invalid"})
+    with pytest.raises(TuyaAuthError):
+        await api.authenticate()
+
+
+async def test_authenticate_other_tuya_error_is_not_a_credential_error(api, mocked):
+    mocked.get(
+        TOKEN_URL,
+        payload={"success": False, "code": 28841002, "msg": "IoT Core service subscription has expired."},
+    )
+    with pytest.raises(TuyaApiError) as err:
+        await api.authenticate()
+    assert not isinstance(err.value, TuyaAuthError)
+    assert err.value.code == 28841002
+
+
 async def test_authenticate_network_error(api, mocked):
     mocked.get(TOKEN_URL, exception=aiohttp.ClientConnectionError("down"))
     with pytest.raises(TuyaConnectionError):
@@ -88,6 +109,24 @@ async def test_token_is_cached(api, mocked):
     mocked.get(f"{BASE}/v1.0/devices/d1/status", payload={"success": True, "result": []}, repeat=True)
     await api.get_status("d1")
     await api.get_status("d1")
+
+
+async def test_token_refetched_after_it_expires(session, mocked, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(api_module, "time", SimpleNamespace(time=lambda: now[0]))
+    api = TuyaLockApi(session, "abc123", "secret456", "eu")
+    status_url = f"{BASE}/v1.0/devices/d1/status"
+    ok = {"success": True, "result": []}
+    mocked.get(TOKEN_URL, payload=TOKEN_OK)
+    mocked.get(status_url, payload=ok, repeat=True)
+    await api.get_status("d1")
+    now[0] = 1000 + 7200 - 301  # still inside the 5 minute safety margin
+    await api.get_status("d1")
+    mocked.get(TOKEN_URL, payload=TOKEN_OK)
+    now[0] = 1000 + 7200  # past expiry minus margin
+    await api.get_status("d1")
+    token_calls = [c for (_, url), c in mocked.requests.items() if url.path == "/v1.0/token"]
+    assert sum(len(c) for c in token_calls) == 2
 
 
 async def test_token_refreshed_after_server_says_invalid(api, mocked):
@@ -229,3 +268,11 @@ async def test_operate_rejected(api, mocked):
     )
     with pytest.raises(TuyaApiError):
         await api.operate("d1", False)
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [({"lock_motor_state": False}, True), ({"lock_motor_state": True}, False), ({}, None), ({"lock_motor_state": "x"}, None)],
+)
+def test_is_locked(status, expected):
+    assert is_locked(status) is expected

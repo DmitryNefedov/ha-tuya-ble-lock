@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Tuya BLE Lock (Cloud)",
-        "description": "Use the Access ID and Access Secret from your Tuya IoT project (iot.tuya.com → Cloud → your project → Overview). The project must be subscribed to the Smart Lock API.",
+        "description": "Use the Access ID and Access Secret from your Tuya IoT project (iot.tuya.com \u2192 Cloud \u2192 your project \u2192 Overview). The project must be subscribed to the Smart Lock API.",
         "data": {
           "client_id": "Access ID",
           "client_secret": "Access Secret",
@@ -13,7 +13,8 @@
     },
     "error": {
       "cannot_connect": "Could not reach Tuya Cloud.",
-      "invalid_auth": "Tuya rejected the Access ID / Secret. Check them and the Region."
+      "invalid_auth": "Tuya rejected the Access ID / Secret. Check them and the Region.",
+      "tuya_error": "Tuya Cloud refused the request: {error}"
     },
     "abort": {
       "already_configured": "This Tuya project is already configured."

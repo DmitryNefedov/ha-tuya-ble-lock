@@ -11,14 +11,17 @@ from .coordinator import TuyaLockCoordinator
 
 class TuyaLockEntity(CoordinatorEntity[TuyaLockCoordinator]):
     _attr_has_entity_name = True
+    _unique_id_suffix = ""
 
     def __init__(self, coordinator: TuyaLockCoordinator, device_id: str) -> None:
         super().__init__(coordinator)
         self._device_id = device_id
+        self._attr_unique_id = device_id + self._unique_id_suffix
         info = coordinator.locks[device_id]
+        self._name = info.get("name", device_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_id)},
-            name=info.get("name", device_id),
+            name=self._name,
             manufacturer="Tuya",
             model=info.get("product_name"),
             model_id=info.get("product_id"),

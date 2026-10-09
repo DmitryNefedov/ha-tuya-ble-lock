@@ -14,7 +14,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
 )
 
-from .api import REGIONS, TuyaAuthError, TuyaConnectionError, TuyaLockApi
+from .api import REGIONS, TuyaApiError, TuyaAuthError, TuyaConnectionError, TuyaLockApi
 from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
@@ -41,6 +41,7 @@ class TuyaBleLockConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {}
 
         if user_input is not None:
             await self.async_set_unique_id(user_input[CONF_CLIENT_ID])
@@ -57,6 +58,9 @@ class TuyaBleLockConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except TuyaConnectionError:
                 errors["base"] = "cannot_connect"
+            except TuyaApiError as err:
+                errors["base"] = "tuya_error"
+                placeholders["error"] = str(err)
             else:
                 return self.async_create_entry(
                     title="Tuya BLE Lock (Cloud)", data=user_input
@@ -76,6 +80,7 @@ class TuyaBleLockConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+            description_placeholders=placeholders,
         )
 
 

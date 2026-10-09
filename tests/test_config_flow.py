@@ -1,9 +1,9 @@
 import pytest
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.tuya_ble_lock.api import TuyaAuthError, TuyaConnectionError
+from custom_components.tuya_ble_lock.api import TuyaApiError, TuyaAuthError, TuyaConnectionError
 from custom_components.tuya_ble_lock.const import DOMAIN
 
 USER_INPUT = {"client_id": "abc123", "client_secret": "s", "region": "eu-west"}
@@ -40,6 +40,14 @@ async def test_errors_then_recovery(hass, api, exc, error):
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
+async def test_tuya_error_is_shown_not_called_bad_credentials(hass, api):
+    api.authenticate.side_effect = TuyaApiError(28841002, "IoT Core service subscription has expired.")
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
+    assert result["errors"] == {"base": "tuya_error"}
+    assert "subscription has expired" in result["description_placeholders"]["error"]
+
+
 async def test_duplicate_entry(hass, api):
     MockConfigEntry(domain=DOMAIN, unique_id="abc123", data=USER_INPUT).add_to_hass(hass)
     result = await _start(hass)
@@ -59,3 +67,13 @@ async def test_options_flow_sets_poll_interval(hass, api, entry):
     assert entry.options == {"poll_interval": 120}
     await hass.async_block_till_done()
     assert entry.runtime_data.update_interval.total_seconds() == 120
+
+
+@pytest.mark.parametrize("interval", [29, 301])
+async def test_options_flow_rejects_out_of_range_interval(hass, api, entry, interval):
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], {"poll_interval": interval}
+        )

@@ -7,7 +7,8 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .coordinator import TuyaLockConfigEntry, TuyaLockCoordinator
+from .api import DP_DOOR, DP_DOUBLE_LOCK
+from .coordinator import TuyaLockConfigEntry
 from .entity import TuyaLockEntity
 
 
@@ -18,26 +19,23 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     entities: list[TuyaLockEntity] = []
-    for id_ in coordinator.locks:
-        status = coordinator.data.get(id_, {})
-        if "closed_opened" in status:
-            entities.append(TuyaLockDoor(coordinator, id_))
-        if "reverse_lock" in status:
-            entities.append(TuyaLockDoubleLocked(coordinator, id_))
+    for device_id in coordinator.locks:
+        status = coordinator.data[device_id]
+        if DP_DOOR in status:
+            entities.append(TuyaLockDoor(coordinator, device_id))
+        if DP_DOUBLE_LOCK in status:
+            entities.append(TuyaLockDoubleLocked(coordinator, device_id))
     async_add_entities(entities)
 
 
 class TuyaLockDoor(TuyaLockEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.DOOR
-
-    def __init__(self, coordinator: TuyaLockCoordinator, device_id: str) -> None:
-        super().__init__(coordinator, device_id)
-        self._attr_unique_id = f"{device_id}_door"
+    _unique_id_suffix = "_door"
 
     @property
     def is_on(self) -> bool | None:
-        # Value mapping is unconfirmed until a live status dump.
-        value = self._status.get("closed_opened")
+        # Only "unknown" has been seen so far; open/closed are assumed.
+        value = self._status.get(DP_DOOR)
         if isinstance(value, bool):
             return value
         return {"open": True, "closed": False}.get(value)
@@ -45,12 +43,9 @@ class TuyaLockDoor(TuyaLockEntity, BinarySensorEntity):
 
 class TuyaLockDoubleLocked(TuyaLockEntity, BinarySensorEntity):
     _attr_translation_key = "double_locked"
-
-    def __init__(self, coordinator: TuyaLockCoordinator, device_id: str) -> None:
-        super().__init__(coordinator, device_id)
-        self._attr_unique_id = f"{device_id}_double_locked"
+    _unique_id_suffix = "_double_locked"
 
     @property
     def is_on(self) -> bool | None:
-        value = self._status.get("reverse_lock")
+        value = self._status.get(DP_DOUBLE_LOCK)
         return value if isinstance(value, bool) else None
