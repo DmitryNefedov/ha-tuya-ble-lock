@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import TuyaError, TuyaLockApi
-from .const import CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL, DOMAIN
+from .const import DOMAIN
+from .schedule import next_poll_delay
+
+UNLOCK_HISTORY_EVERY = timedelta(minutes=30)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,13 +34,13 @@ class TuyaLockCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=timedelta(
-                seconds=entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
-            ),
+            update_interval=next_poll_delay(dt_util.now()),
         )
         self.api = api
         self.locks: dict[str, dict[str, Any]] = {}
         self.last_unlocks: dict[str, dict[str, Any] | None] = {}
+        self._unlock_history_read: datetime | None = None
+        self._unlock_history_due = False
 
     async def async_load_locks(self) -> None:
         """Fetch the device list. Done once at setup, not on every poll."""
@@ -45,14 +49,27 @@ class TuyaLockCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except TuyaError as err:
             raise ConfigEntryNotReady(f"Could not list Locks: {err}") from err
 
+    async def async_refresh_with_unlock_history(self) -> None:
+        self._unlock_history_due = True
+        await self.async_refresh()
+
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
+        self.update_interval = next_poll_delay(dt_util.now())
         try:
             data = {id_: await self.api.get_status(id_) for id_ in self.locks}
         except TuyaError as err:
             raise UpdateFailed(f"Error talking to Tuya Cloud: {err}") from err
-        for id_ in self.locks:
-            try:
-                self.last_unlocks[id_] = await self.api.last_unlock(id_)
-            except TuyaError as err:
-                _LOGGER.debug("Could not read the unlock history of %s: %s", id_, err)
+        now = dt_util.utcnow()
+        if (
+            self._unlock_history_due
+            or self._unlock_history_read is None
+            or now - self._unlock_history_read >= UNLOCK_HISTORY_EVERY
+        ):
+            self._unlock_history_due = False
+            self._unlock_history_read = now
+            for id_ in self.locks:
+                try:
+                    self.last_unlocks[id_] = await self.api.last_unlock(id_)
+                except TuyaError as err:
+                    _LOGGER.debug("Could not read the unlock history of %s: %s", id_, err)
         return data

@@ -13,10 +13,9 @@ from .api import TuyaError, is_locked
 from .coordinator import TuyaLockConfigEntry
 from .entity import TuyaLockEntity
 
-# The Lock unlocks about 10 s after a command and re-locks about 6 s later, so the
-# state is followed for 30 s instead of waiting for the next regular poll.
-REFRESH_EVERY = 5
-REFRESH_COUNT = 6
+# The Lock unlocks about 10 s after a command and re-locks about 6 s later, so the state
+# is read at 12 s and 20 s (not left to the next poll). Each read costs an API call.
+FOLLOW_UP_DELAYS = (12, 8)
 
 
 async def async_setup_entry(
@@ -49,20 +48,22 @@ class TuyaLock(TuyaLockEntity, LockEntity):
             raise HomeAssistantError(
                 f"Could not {'unlock' if unlock else 'lock'} {self._name}: {err}"
             ) from err
-        self._schedule_refresh(REFRESH_COUNT)
+        self._schedule_follow_up(FOLLOW_UP_DELAYS)
 
-    def _schedule_refresh(self, remaining: int) -> None:
+    def _schedule_follow_up(self, delays: tuple[int, ...]) -> None:
         if self._cancel_refresh:
             self._cancel_refresh()
         self._cancel_refresh = async_call_later(
-            self.hass, REFRESH_EVERY, partial(self._refresh_after_command, remaining)
+            self.hass, delays[0], partial(self._follow_up, delays[1:])
         )
 
-    async def _refresh_after_command(self, remaining: int, _now: Any) -> None:
+    async def _follow_up(self, remaining: tuple[int, ...], _now: Any) -> None:
         self._cancel_refresh = None
-        await self.coordinator.async_refresh()
-        if remaining > 1:
-            self._schedule_refresh(remaining - 1)
+        if remaining:
+            await self.coordinator.async_refresh()
+            self._schedule_follow_up(remaining)
+        else:
+            await self.coordinator.async_refresh_with_unlock_history()
 
     async def async_will_remove_from_hass(self) -> None:
         if self._cancel_refresh:

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 from unittest.mock import AsyncMock
 
 import pytest
@@ -20,6 +21,12 @@ BATTERY = "sensor.front_door_battery"
 DOOR = "binary_sensor.front_door_door"
 DOUBLE = "binary_sensor.front_door_double_locked"
 LAST_UNLOCK_SENSOR = "sensor.front_door_last_unlock"
+
+
+async def _at(hass, freezer, hour, minute=0, tz="Australia/Sydney"):
+    """Set Home Assistant's timezone and the (frozen) local time of day."""
+    await hass.config.async_set_time_zone(tz)
+    freezer.move_to(datetime(2026, 10, 9, hour, minute, tzinfo=ZoneInfo(tz)))
 
 
 async def _setup(hass, entry):
@@ -83,20 +90,57 @@ async def test_lock_services_call_operate(hass, api, entry, service, open_):
     api.get_status.assert_not_awaited()  # the Lock needs a few seconds to report
 
 
-async def test_state_is_followed_for_30_seconds_after_a_command(hass, api, entry):
+async def test_state_is_followed_after_a_command(hass, freezer, api, entry):
     """The Lock unlocks about 10 s after the command and re-locks about 6 s later."""
+    await _at(hass, freezer, 12)  # quiet hours: no regular poll interferes
     await _setup(hass, entry)
     api.get_status.reset_mock()
+    api.last_unlock.reset_mock()
     await hass.services.async_call("lock", "unlock", {"entity_id": LOCK}, blocking=True)
-    seen = []
-    for step, motor in enumerate([False, False, True, False, False, False, False, False], start=1):
-        api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": motor}
-        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5 * step + 1))
-        await hass.async_block_till_done()
-        seen.append(hass.states.get(LOCK).state)
-    assert "unlocked" in seen
-    assert seen[3] == "locked"  # the re-lock is picked up on the next refresh, not a minute later
-    assert api.get_status.await_count == 6  # then back to the normal poll interval
+
+    api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": True}
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=13))
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK).state == "unlocked"
+    api.last_unlock.assert_not_awaited()
+
+    api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": False}
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=22))
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK).state == "locked"
+    assert api.get_status.await_count == 2
+    assert api.last_unlock.await_count == 1  # the unlock history is read once, at the end
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=60))
+    await hass.async_block_till_done()
+    assert api.get_status.await_count == 2  # then back to the normal schedule
+
+
+@pytest.mark.parametrize(
+    ("hour", "minute", "tz", "interval"),
+    [
+        (8, 0, "Australia/Sydney", timedelta(minutes=1)),
+        (12, 0, "Australia/Sydney", timedelta(minutes=30)),
+        (16, 0, "Australia/Sydney", timedelta(minutes=1)),
+        (21, 0, "Australia/Sydney", timedelta(minutes=30)),
+        (21, 0, "UTC", timedelta(minutes=30)),
+        (8, 0, "UTC", timedelta(minutes=1)),
+    ],
+)
+async def test_poll_interval_follows_local_time_of_day(hass, freezer, api, entry, hour, minute, tz, interval):
+    await _at(hass, freezer, hour, minute, tz)
+    await _setup(hass, entry)
+    assert entry.runtime_data.update_interval == interval
+
+
+async def test_unlock_history_is_not_read_on_every_poll(hass, freezer, api, entry):
+    await _at(hass, freezer, 8)
+    await _setup(hass, entry)
+    await entry.runtime_data.async_refresh()
+    assert api.last_unlock.await_count == 1
+    freezer.tick(timedelta(minutes=31))
+    await entry.runtime_data.async_refresh()
+    assert api.last_unlock.await_count == 2
 
 
 async def test_last_unlock_sensor(hass, api, entry):
@@ -134,7 +178,8 @@ async def test_setup_retries_when_device_list_fails(hass, api, entry):
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
-async def test_poll_failure_makes_entities_unavailable(hass, api, entry):
+async def test_poll_failure_makes_entities_unavailable(hass, freezer, api, entry):
+    await _at(hass, freezer, 8)
     await _setup(hass, entry)
     api.get_status.side_effect = TuyaConnectionError("down")
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=61))

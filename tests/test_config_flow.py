@@ -1,6 +1,6 @@
 import pytest
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResultType, InvalidData
+from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.tuya_ble_lock.api import TuyaApiError, TuyaAuthError, TuyaConnectionError
@@ -54,26 +54,3 @@ async def test_duplicate_entry(hass, api):
     result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
-
-
-async def test_options_flow_sets_poll_interval(hass, api, entry):
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] is FlowResultType.FORM
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"poll_interval": 120}
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {"poll_interval": 120}
-    await hass.async_block_till_done()
-    assert entry.runtime_data.update_interval.total_seconds() == 120
-
-
-@pytest.mark.parametrize("interval", [29, 301])
-async def test_options_flow_rejects_out_of_range_interval(hass, api, entry, interval):
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    with pytest.raises(InvalidData):
-        await hass.config_entries.options.async_configure(
-            result["flow_id"], {"poll_interval": interval}
-        )

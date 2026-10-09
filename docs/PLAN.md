@@ -12,7 +12,7 @@ Goal: a HACS custom integration that locks and unlocks the WUN-AXDL-261 (qxjx5jm
 | Region | Config-flow dropdown, default Central Europe: CN `openapi.tuyacn.com`, US-West `openapi.tuyaus.com`, US-East `openapi-ueaz.tuyaus.com`, EU-Central `openapi.tuyaeu.com`, EU-West `openapi-weaz.tuyaeu.com`, India `openapi.tuyain.com` |
 | Lock/unlock | Both use `POST /v1.0/devices/{id}/door-lock/password-ticket` → `POST /v1.0/smart-lock/devices/{id}/password-free/door-operate {ticket_id, open}`. A rejected command raises `HomeAssistantError`. |
 | Entities | `lock`; battery `sensor` (`residual_electricity`); door `binary_sensor` (`closed_opened`) and double-lock `binary_sensor` (`reverse_lock`), each created only if the data point is present in the status |
-| Updates | Polling, interval set in the options flow (30–300s, default 60). Device list is fetched at setup only. |
+| Updates | Polling on a fixed time-of-day schedule (every 1 min 07:30–10:00 and 15:00–18:30, else every 30 min) to stay within Tuya's 26,000 calls a month; not configurable yet. Device list is fetched at setup only. |
 | Layering | `api.py` is plain aiohttp with no HA imports (signing, token, Ticket, door-operate, status, remote-unlock check). The coordinator wraps it. |
 | Tests | Offline unit tests always run. Live tests live in `live_tests/`, run only via `scripts/live.sh` with env credentials, need no Home Assistant, physically unlock then lock, and are never exposed in HA. |
 | HACS | Custom repository only. GitHub releases; CI runs `hacs/action` + `hassfest` + unit tests. Min HA 2025.1, Python 3.13. |
@@ -37,7 +37,6 @@ Goal: a HACS custom integration that locks and unlocks the WUN-AXDL-261 (qxjx5jm
    - → verify: unit tests sign a known vector and handle token refresh and every API error path (aioresponses).
 4. **Config and options flow**
    - Fields: Access ID, Access Secret, Region (default EU-Central). Auth is tested through `api.py`.
-   - Options flow: poll interval.
    - → verify: config-flow tests cover success, bad auth, duplicate entry, and options.
 5. **Entities**
    - `lock` with `async_lock`/`async_unlock` → `operate(False/True)`, then refresh.

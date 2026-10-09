@@ -58,14 +58,40 @@ Free subscriptions are trials. When one expires, extend it from the **Service AP
 | `sensor` Battery | From `residual_electricity`. The reading is noisy (it moves several points while the motor runs). |
 | `binary_sensor` Door | From `closed_opened`. This lock reports `unknown`, so expect an unknown state. |
 | `binary_sensor` Double locked | From `reverse_lock`. |
-| `sensor` Last unlock | When and how the lock was last unlocked in the last 7 days. Attributes: `method` (`unlock_fingerprint`, `unlock_phone_remote`, `unlock_ble`...), `name` (the finger or code name, for example "Left Thumb") and `user`. Read from Tuya's unlock history, one extra API call per poll. |
+| `sensor` Last unlock | When and how the lock was last unlocked in the last 7 days. Attributes: `method` (`unlock_fingerprint`, `unlock_phone_remote`, `unlock_ble`...), `name` (the finger or code name, for example "Left Thumb") and `user`. Read from Tuya's unlock history, at most every 30 minutes and once after each command. |
 
 Behaviour specific to this lock:
-- **It re-locks itself.** The Delta Smart handle is locked by default and releases only briefly after an unlock (fingerprint, code, or this integration). The state returns to locked on its own, roughly a minute later in the cloud.
-- **It unlocks slowly.** After a command the lock releases about 10 seconds later and re-locks about 6 seconds after that. Home Assistant re-reads the state every 5 seconds for 30 seconds after each command, so the unlock and re-lock both show up within a few seconds. That is 6 extra status calls (and 6 extra unlock-history calls) per command.
-- **The cloud reports late.** Outside that window Home Assistant polls (default every 60 s, 30–300 s in the integration's options), so the state can lag behind what you see at the door.
+- **It re-locks itself.** The Delta Smart handle is locked by default and releases only briefly after an unlock (fingerprint, code, or this integration). The state returns to locked on its own about 6 seconds after the unlock.
+- **It unlocks slowly.** After a command the lock releases about 10 seconds later and re-locks about 6 seconds after that. Home Assistant reads the state again 12 and 20 seconds after each command, so both changes show up. See [Polling and Tuya's API limit](#polling-and-tuyas-api-limit).
+- **The state can lag.** Between polls Home Assistant does not know what happened at the door. A fingerprint unlock lasts about 6 seconds, so a poll will usually miss it.
 - **Failed fingerprints are not reported.** Tuya records successful unlocks, with the finger name, but nothing for a rejected fingerprint; `alarm_lock` in the status is a stale value.
 - **Offline is not detected.** The device list is read once when the integration loads (reload it after adding a lock), and the lock does not turn "unavailable" when the Gateway goes offline; commands will then fail with an error.
+
+## Polling and Tuya's API limit
+
+Tuya's free IoT Core trial allows **26,000 API calls a month**, in total. Polling every minute around the clock would use about 43,000 calls on status alone, so the integration polls on a fixed schedule in Home Assistant's timezone (Settings → System → General):
+
+| Local time | Status poll |
+|------------|-------------|
+| 07:30–10:00 | every 1 minute |
+| 10:00–15:00 | every 30 minutes |
+| 15:00–18:30 | every 1 minute |
+| 18:30–07:30 | every 30 minutes |
+
+Why these hours: they are when people typically come and go, so a fresh state matters most then. The rest of the day it barely does, because the unlocked state lasts only about 6 seconds.
+
+Monthly budget (30 days):
+
+| Calls | Per month |
+|-------|-----------|
+| Status polls (396 a day) | 11,880 |
+| Unlock history (every 30 minutes, 48 a day) | 1,440 |
+| Commands (5 calls each, 20 a day) | 3,000 |
+| **Total** | **about 16,300** of 26,000 |
+
+A command costs 5 calls: the ticket, the unlock, a status read at 12 s, another at 20 s, and one unlock-history read. The Last unlock sensor therefore updates at most every 30 minutes, or right after a command.
+
+**The schedule is not configurable yet.** It is fixed in code (`custom_components/tuya_ble_lock/schedule.py`); an options screen is planned. The live tests and every reload also use calls from the same quota.
 
 ## How locking works
 

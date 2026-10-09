@@ -20,15 +20,6 @@
       "already_configured": "This Tuya project is already configured."
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "data": {
-          "poll_interval": "Poll interval"
-        }
-      }
-    }
-  },
   "selector": {
     "region": {
       "options": {
