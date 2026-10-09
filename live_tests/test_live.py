@@ -52,13 +52,13 @@ async def test_remote_unlock_enabled(api, device_id):
     assert await api.remote_unlock_enabled(device_id), REMOTE_OFF
 
 
-async def test_unlock_command(api, device_id):
+async def test_send_unlock(api, device_id):
     """Physically releases the Lock (momentary: it re-locks itself)."""
     assert await api.remote_unlock_enabled(device_id), REMOTE_OFF
     await send_and_watch(api, device_id, True)
 
 
-async def test_lock_command(api, device_id):
+async def test_send_lock(api, device_id):
     """Tuya may reject this for a Lock that is locked by default; that rejection is the finding."""
     assert await api.remote_unlock_enabled(device_id), REMOTE_OFF
     await send_and_watch(api, device_id, False)

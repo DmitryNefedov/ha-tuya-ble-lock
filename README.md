@@ -51,7 +51,7 @@ Any `jtmspro` Lock should work. Verified models have passed a [live test](#live-
 |------------|-------|----------|
 | `8gza4o8a` | LA-T01 | by upstream |
 | `99gv5nmz` | LA-T01 (variant) | by upstream |
-| `qxjx5jms` | WUN-AXDL-261 | not yet |
+| `qxjx5jms` | WUN-AXDL-261 | yes, lock and unlock (live test) |
 
 ## Development
 
@@ -68,7 +68,7 @@ These talk to Tuya Cloud and **physically unlock then re-lock a real Lock**. The
 ```
 TUYA_ACCESS_ID=... TUYA_ACCESS_SECRET=... TUYA_REGION=eu TUYA_DEVICE_ID=... \
   scripts/live.sh                # all five tests
-  scripts/live.sh -k status      # just one: token, status, remote, unlock or lock
+  scripts/live.sh -k status      # just one: token, status, remote, send_unlock or send_lock
 ```
 
 `TUYA_REGION` is one of `cn`, `us-west`, `us-east`, `eu`, `eu-west`, `in`. The tests print the Lock's data points; the physical cycle refuses to start unless the Lock reports Locked, and always attempts to lock on exit.

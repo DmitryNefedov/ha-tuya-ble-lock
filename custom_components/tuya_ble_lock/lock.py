@@ -30,7 +30,7 @@ class TuyaLock(TuyaLockEntity, LockEntity):
 
     @property
     def is_locked(self) -> bool | None:
-        # lock_motor_state is True while the bolt is retracted. Unconfirmed until a live status dump.
+        # lock_motor_state is True while the bolt is retracted (confirmed on qxjx5jms by a live test).
         motor = self._status.get("lock_motor_state")
         return None if not isinstance(motor, bool) else not motor
 
