@@ -117,6 +117,38 @@ async def test_state_is_followed_after_a_command(hass, freezer, api, entry):
 
 
 @pytest.mark.parametrize(
+    ("service", "pending", "motor", "settled"),
+    [
+        ("unlock", "unlocking", True, "unlocked"),
+        ("unlock", "unlocking", False, "locked"),  # re-locked before the read: still a change
+        ("lock", "locking", False, "locked"),
+    ],
+)
+async def test_state_changes_while_a_command_is_in_flight(
+    hass, freezer, api, entry, service, pending, motor, settled
+):
+    """Without a state change the more-info toggle stays where the user flipped it."""
+    await _at(hass, freezer, 12)
+    await _setup(hass, entry)
+    await hass.services.async_call("lock", service, {"entity_id": LOCK}, blocking=True)
+    assert hass.states.get(LOCK).state == pending
+
+    api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": motor}
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=13))
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK).state == settled
+
+
+async def test_failed_command_does_not_leave_the_lock_pending(hass, freezer, api, entry):
+    await _at(hass, freezer, 12)
+    await _setup(hass, entry)
+    api.operate.side_effect = TuyaApiError(1, "no")
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call("lock", "unlock", {"entity_id": LOCK}, blocking=True)
+    assert hass.states.get(LOCK).state == "locked"
+
+
+@pytest.mark.parametrize(
     ("hour", "minute", "tz", "interval"),
     [
         (8, 0, "Australia/Sydney", timedelta(minutes=1)),

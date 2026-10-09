@@ -48,6 +48,11 @@ class TuyaLock(TuyaLockEntity, LockEntity):
             raise HomeAssistantError(
                 f"Could not {'unlock' if unlock else 'lock'} {self._name}: {err}"
             ) from err
+        # Without a state change the more-info toggle stays where the user flipped it,
+        # and the Lock often goes unlocked and back between two reads.
+        self._attr_is_unlocking = unlock
+        self._attr_is_locking = not unlock
+        self.async_write_ha_state()
         self._schedule_follow_up(FOLLOW_UP_DELAYS)
 
     def _schedule_follow_up(self, delays: tuple[int, ...]) -> None:
@@ -59,6 +64,7 @@ class TuyaLock(TuyaLockEntity, LockEntity):
 
     async def _follow_up(self, remaining: tuple[int, ...], _now: Any) -> None:
         self._cancel_refresh = None
+        self._attr_is_unlocking = self._attr_is_locking = False
         if remaining:
             await self.coordinator.async_refresh()
             self._schedule_follow_up(remaining)
