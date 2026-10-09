@@ -1,7 +1,7 @@
 """Live tests: talk to Tuya Cloud and physically operate a real Lock.
 
-Run with: TUYA_ACCESS_ID=... TUYA_ACCESS_SECRET=... TUYA_REGION=eu TUYA_DEVICE_ID=... \
-    scripts/test.sh -m live -s
+Independent of Home Assistant. Run with: TUYA_ACCESS_ID=... TUYA_ACCESS_SECRET=... \
+TUYA_REGION=eu TUYA_DEVICE_ID=... scripts/live.sh
 """
 
 import asyncio
@@ -9,8 +9,6 @@ import json
 import time
 
 import pytest
-
-pytestmark = pytest.mark.live
 
 POLL_TIMEOUT = 30
 POLL_EVERY = 2

@@ -14,7 +14,7 @@ Goal: a HACS custom integration that locks and unlocks the WUN-AXDL-261 (qxjx5jm
 | Entities | `lock`; battery `sensor` (`residual_electricity`); door `binary_sensor` (`closed_opened`) and double-lock `binary_sensor` (`reverse_lock`), each created only if the data point is present in the status |
 | Updates | Polling, interval set in the options flow (30–300s, default 60). Device list is fetched at setup only. |
 | Layering | `api.py` is plain aiohttp with no HA imports (signing, token, Ticket, door-operate, status, remote-unlock check). The coordinator wraps it. |
-| Tests | Offline unit tests always run. Live tests run only with env credentials **and** `-m live`, physically unlock then lock, and are never exposed in HA. |
+| Tests | Offline unit tests always run. Live tests live in `live_tests/`, run only via `scripts/live.sh` with env credentials, need no Home Assistant, physically unlock then lock, and are never exposed in HA. |
 | HACS | Custom repository only. GitHub releases; CI runs `hacs/action` + `hassfest` + unit tests. Min HA 2025.1, Python 3.13. |
 | License | None until upstream answers the license issue |
 | Old work | `/mnt/data/projects/ha_tuya_ble` branch `add-qxjx5jms` is superseded and left alone |
@@ -47,10 +47,10 @@ Goal: a HACS custom integration that locks and unlocks the WUN-AXDL-261 (qxjx5jm
    - → verify: entity tests with recorded status fixtures.
 6. **Test harness**
    - `requirements_test.txt` (`pytest-homeassistant-custom-component`, `aioresponses`).
-   - `tests/live/` uses only `api.py` + aiohttp.
-   - `pytest.ini` registers the `live` marker and excludes it by default (`-m "not live"`).
-   - `scripts/test.sh` runs the tests in `docker run python:3.13-slim` and passes `TUYA_*` env vars through without writing them anywhere.
-   - → verify: offline suite green; `-m live` without env vars skips with the reason shown.
+   - `live_tests/` uses only `api.py` (loaded by file path, so no Home Assistant import) + aiohttp, with its own slim image.
+   - `scripts/test.sh` runs the offline tests in a cached `python:3.13` image (gcc is needed for `lru-dict`).
+   - `scripts/live.sh` runs the Live tests and passes `TUYA_*` env vars through without writing them anywhere.
+   - → verify: offline suite green; `scripts/live.sh` without env vars skips with the reason shown.
 7. **Live tests** (env: `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, `TUYA_REGION`, `TUYA_DEVICE_ID`)
    - Token and device list: the Lock is found with category `jtmspro`.
    - Status dump, printed for the data-point mapping in Phase 5.

@@ -1,0 +1,4 @@
+FROM python:3.13
+WORKDIR /src
+COPY requirements_test.txt .
+RUN pip install -r requirements_test.txt

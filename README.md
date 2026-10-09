@@ -55,7 +55,7 @@ Any `jtmspro` Lock should work. Verified models have passed a [live test](#live-
 
 ## Development
 
-Tests run in Docker (`python:3.13`):
+Tests run in Docker (`python:3.13`; the first run builds an image with the dependencies, which takes a few minutes):
 
 ```
 scripts/test.sh                 # offline unit tests
@@ -63,11 +63,12 @@ scripts/test.sh                 # offline unit tests
 
 ### Live tests
 
-These talk to Tuya Cloud and **physically unlock then re-lock a real Lock**. They are never part of the default run and use only environment variables (nothing is stored):
+These talk to Tuya Cloud and **physically unlock then re-lock a real Lock**. They live in `live_tests/`, need no Home Assistant (a small `python:3.13-slim` image with pytest and aiohttp), are never part of `scripts/test.sh`, and use only environment variables (nothing is stored):
 
 ```
 TUYA_ACCESS_ID=... TUYA_ACCESS_SECRET=... TUYA_REGION=eu TUYA_DEVICE_ID=... \
-  scripts/test.sh -m live -s
+  scripts/live.sh                # all four tests
+  scripts/live.sh -k status      # just one: token, status, remote or physical
 ```
 
 `TUYA_REGION` is one of `cn`, `us-west`, `us-east`, `eu`, `eu-west`, `in`. The tests print the Lock's data points; the physical cycle refuses to start unless the Lock reports Locked, and always attempts to lock on exit.
