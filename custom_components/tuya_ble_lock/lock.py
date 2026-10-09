@@ -13,9 +13,11 @@ from .api import TuyaError, is_locked
 from .coordinator import TuyaLockConfigEntry
 from .entity import TuyaLockEntity
 
-# The Lock unlocks about 10 s after a command and re-locks about 6 s later, so the state
-# is read at 12 s and 20 s (not left to the next poll). Each read costs an API call.
-FOLLOW_UP_DELAYS = (12, 8)
+# The Lock unlocks about 10 s after a command and re-locks about 6 s later, so after a
+# command the state is read every 5 s, at most 6 times (not left to the next poll). The
+# reads stop early once the lock has unlocked and locked again. Each read costs an API call.
+FOLLOW_UP_EVERY = 5
+FOLLOW_UP_CHECKS = 6
 
 
 async def async_setup_entry(
@@ -30,6 +32,8 @@ async def async_setup_entry(
 class TuyaLock(TuyaLockEntity, LockEntity):
     _attr_name = None
     _cancel_refresh: CALLBACK_TYPE | None = None
+    _command_unlocks = False
+    _seen_unlocked = False
 
     @property
     def is_locked(self) -> bool | None:
@@ -50,26 +54,38 @@ class TuyaLock(TuyaLockEntity, LockEntity):
             ) from err
         # Without a state change the more-info toggle stays where the user flipped it,
         # and the Lock often goes unlocked and back between two reads.
+        self._command_unlocks = unlock
+        self._seen_unlocked = False
         self._attr_is_unlocking = unlock
         self._attr_is_locking = not unlock
         self.async_write_ha_state()
-        self._schedule_follow_up(FOLLOW_UP_DELAYS)
+        self._schedule_follow_up(FOLLOW_UP_CHECKS)
 
-    def _schedule_follow_up(self, delays: tuple[int, ...]) -> None:
+    def _schedule_follow_up(self, checks_left: int) -> None:
         if self._cancel_refresh:
             self._cancel_refresh()
         self._cancel_refresh = async_call_later(
-            self.hass, delays[0], partial(self._follow_up, delays[1:])
+            self.hass, FOLLOW_UP_EVERY, partial(self._follow_up, checks_left)
         )
 
-    async def _follow_up(self, remaining: tuple[int, ...], _now: Any) -> None:
+    async def _follow_up(self, checks_left: int, _now: Any) -> None:
         self._cancel_refresh = None
-        self._attr_is_unlocking = self._attr_is_locking = False
-        if remaining:
-            await self.coordinator.async_refresh()
-            self._schedule_follow_up(remaining)
+        await self.coordinator.async_refresh()
+        locked = self.is_locked
+        checks_left -= 1
+        if self._command_unlocks:
+            self._seen_unlocked = self._seen_unlocked or locked is False
+            settled = self._seen_unlocked
+            done = self._seen_unlocked and locked is True
         else:
-            await self.coordinator.async_refresh_with_unlock_history()
+            settled = done = locked is True
+        if settled or not checks_left:
+            self._attr_is_unlocking = self._attr_is_locking = False
+            self.async_write_ha_state()
+        if done or not checks_left:
+            await self.coordinator.async_read_unlock_history()
+        else:
+            self._schedule_follow_up(checks_left)
 
     async def async_will_remove_from_hass(self) -> None:
         if self._cancel_refresh:

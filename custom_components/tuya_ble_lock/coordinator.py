@@ -40,7 +40,6 @@ class TuyaLockCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self.locks: dict[str, dict[str, Any]] = {}
         self.last_unlocks: dict[str, dict[str, Any] | None] = {}
         self._unlock_history_read: datetime | None = None
-        self._unlock_history_due = False
 
     async def async_load_locks(self) -> None:
         """Fetch the device list. Done once at setup, not on every poll."""
@@ -49,9 +48,17 @@ class TuyaLockCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except TuyaError as err:
             raise ConfigEntryNotReady(f"Could not list Locks: {err}") from err
 
-    async def async_refresh_with_unlock_history(self) -> None:
-        self._unlock_history_due = True
-        await self.async_refresh()
+    async def async_read_unlock_history(self) -> None:
+        await self._read_unlock_history()
+        self.async_update_listeners()
+
+    async def _read_unlock_history(self) -> None:
+        self._unlock_history_read = dt_util.utcnow()
+        for id_ in self.locks:
+            try:
+                self.last_unlocks[id_] = await self.api.last_unlock(id_)
+            except TuyaError as err:
+                _LOGGER.debug("Could not read the unlock history of %s: %s", id_, err)
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         self.update_interval = next_poll_delay(dt_util.now())
@@ -59,17 +66,9 @@ class TuyaLockCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             data = {id_: await self.api.get_status(id_) for id_ in self.locks}
         except TuyaError as err:
             raise UpdateFailed(f"Error talking to Tuya Cloud: {err}") from err
-        now = dt_util.utcnow()
         if (
-            self._unlock_history_due
-            or self._unlock_history_read is None
-            or now - self._unlock_history_read >= UNLOCK_HISTORY_EVERY
+            self._unlock_history_read is None
+            or dt_util.utcnow() - self._unlock_history_read >= UNLOCK_HISTORY_EVERY
         ):
-            self._unlock_history_due = False
-            self._unlock_history_read = now
-            for id_ in self.locks:
-                try:
-                    self.last_unlocks[id_] = await self.api.last_unlock(id_)
-                except TuyaError as err:
-                    _LOGGER.debug("Could not read the unlock history of %s: %s", id_, err)
+            await self._read_unlock_history()
         return data

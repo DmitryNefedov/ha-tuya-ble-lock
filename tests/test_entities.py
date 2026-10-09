@@ -90,53 +90,55 @@ async def test_lock_services_call_operate(hass, api, entry, service, open_):
     api.get_status.assert_not_awaited()  # the Lock needs a few seconds to report
 
 
-async def test_state_is_followed_after_a_command(hass, freezer, api, entry):
-    """The Lock unlocks about 10 s after the command and re-locks about 6 s later."""
-    await _at(hass, freezer, 12)  # quiet hours: no regular poll interferes
-    await _setup(hass, entry)
+async def _command_then_reads(hass, freezer, api, service, motors):
+    """Run a command, then one status read every 5 s returning `motors` in turn.
+
+    Call after `_at(12)` (quiet hours, so no regular poll interferes). Returns the lock
+    state after the command and after each read.
+    """
     api.get_status.reset_mock()
     api.last_unlock.reset_mock()
-    await hass.services.async_call("lock", "unlock", {"entity_id": LOCK}, blocking=True)
+    await hass.services.async_call("lock", service, {"entity_id": LOCK}, blocking=True)
+    states = [hass.states.get(LOCK).state]
+    for n, motor in enumerate(motors, start=1):
+        api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": motor}
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5 * n))
+        await hass.async_block_till_done()
+        states.append(hass.states.get(LOCK).state)
+    return states
 
-    api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": True}
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=13))
-    await hass.async_block_till_done()
-    assert hass.states.get(LOCK).state == "unlocked"
-    api.last_unlock.assert_not_awaited()
 
-    api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": False}
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=22))
-    await hass.async_block_till_done()
-    assert hass.states.get(LOCK).state == "locked"
-    assert api.get_status.await_count == 2
+async def test_unlock_stops_checking_once_it_has_unlocked_and_locked_again(
+    hass, freezer, api, entry
+):
+    await _at(hass, freezer, 12)
+    await _setup(hass, entry)
+    states = await _command_then_reads(hass, freezer, api, "unlock", [False, True, True, False])
+    assert states == ["unlocking", "unlocking", "unlocked", "unlocked", "locked"]
+    assert api.get_status.await_count == 4
     assert api.last_unlock.await_count == 1  # the unlock history is read once, at the end
 
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=60))
     await hass.async_block_till_done()
-    assert api.get_status.await_count == 2  # then back to the normal schedule
+    assert api.get_status.await_count == 4  # no more checks, back to the normal schedule
 
 
-@pytest.mark.parametrize(
-    ("service", "pending", "motor", "settled"),
-    [
-        ("unlock", "unlocking", True, "unlocked"),
-        ("unlock", "unlocking", False, "locked"),  # re-locked before the read: still a change
-        ("lock", "locking", False, "locked"),
-    ],
-)
-async def test_state_changes_while_a_command_is_in_flight(
-    hass, freezer, api, entry, service, pending, motor, settled
-):
-    """Without a state change the more-info toggle stays where the user flipped it."""
+async def test_unlock_that_never_happens_gives_up_after_six_checks(hass, freezer, api, entry):
     await _at(hass, freezer, 12)
     await _setup(hass, entry)
-    await hass.services.async_call("lock", service, {"entity_id": LOCK}, blocking=True)
-    assert hass.states.get(LOCK).state == pending
+    states = await _command_then_reads(hass, freezer, api, "unlock", [False] * 8)
+    assert states == ["unlocking"] * 6 + ["locked"] * 3
+    assert api.get_status.await_count == 6
+    assert api.last_unlock.await_count == 1
 
-    api.get_status.return_value = {**STATUS_LOCKED, "lock_motor_state": motor}
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=13))
-    await hass.async_block_till_done()
-    assert hass.states.get(LOCK).state == settled
+
+async def test_lock_stops_checking_once_locked(hass, freezer, api, entry):
+    await _at(hass, freezer, 12)
+    await _setup(hass, entry)
+    states = await _command_then_reads(hass, freezer, api, "lock", [False, False])
+    assert states == ["locking", "locked", "locked"]
+    assert api.get_status.await_count == 1
+    assert api.last_unlock.await_count == 1
 
 
 async def test_failed_command_does_not_leave_the_lock_pending(hass, freezer, api, entry):
