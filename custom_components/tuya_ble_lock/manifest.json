@@ -1,0 +1,12 @@
+{
+  "domain": "tuya_ble_lock",
+  "name": "Tuya BLE Lock (Cloud)",
+  "codeowners": ["@DmitryNefedov"],
+  "config_flow": true,
+  "documentation": "https://github.com/DmitryNefedov/ha-tuya-ble-lock",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/DmitryNefedov/ha-tuya-ble-lock/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

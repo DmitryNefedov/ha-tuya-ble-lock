@@ -1,5 +1,5 @@
 {
-  "name": "Tuya LA-T01 Smart Lock",
+  "name": "Tuya BLE Lock (Cloud)",
   "render_readme": true,
-  "homeassistant": "2023.1.0"
+  "homeassistant": "2025.1.0"
 }

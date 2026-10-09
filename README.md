@@ -1,107 +1,77 @@
-# Tuya LA-T01 Smart Lock — Home Assistant Integration
+# Tuya BLE Lock (Cloud)
 
-Custom component for Home Assistant that integrates **Tuya LA-T01 smart locks** (JTMS Pro / `jtmspro` category) via the Tuya Cloud Smart Lock API.
+Home Assistant integration that locks and unlocks Tuya Bluetooth door locks (category `jtmspro`) through Tuya Cloud, relayed by a Tuya Bluetooth Gateway. It does not use Bluetooth from Home Assistant. See [ADR 0001](docs/adr/0001-cloud-api-not-local-ble.md).
 
-## Features
+Started from [rkalandyk/ha-tuya-la-lock](https://github.com/rkalandyk/ha-tuya-la-lock).
 
-- Auto-discovers all LA-T01 locks from your Tuya account
-- Native HA `lock` entities with **unlock** support
-- Uses the official **Smart Lock API** (ticket-based, password-free unlock)
-- Polls lock status every 60 seconds (battery, alarm, auto-lock state, etc.)
-- No local network required — works fully via Tuya Cloud
+## Setup
 
-## Requirements
+### Tuya IoT project
+1. Create a Cloud project at [iot.tuya.com](https://iot.tuya.com) in the Data Center (Region) of your Smart Life account.
+2. Subscribe the project to the **Smart Lock** API (Cloud → your project → Service API).
+3. Link your Smart Life account to the project (Devices → Link App Account).
+4. In the Smart Life app, enable **Remote Unlock** for the Lock (Lock → Settings → Remote Unlock).
 
-1. Tuya Cloud project with **Smart Lock API** subscribed
-   - Go to [iot.tuya.com](https://iot.tuya.com) → your project → Cloud Services → subscribe **Smart Lock**
-2. Client ID and Client Secret from your Tuya Cloud project
+Trial projects expire and have API quotas; renew the trial or subscribe to a paid plan if commands start failing.
 
-## Installation
+### Install
+1. HACS → Custom repositories → add `https://github.com/DmitryNefedov/ha-tuya-ble-lock` as an Integration.
+2. Install **Tuya BLE Lock (Cloud)**, restart Home Assistant.
+3. Settings → Devices & services → Add integration → **Tuya BLE Lock (Cloud)**. Enter the project's Access ID, Access Secret and Region.
 
-### Manual (HACS not yet supported)
+Requires Home Assistant 2025.1 or newer.
 
-1. Copy `custom_components/tuya_la_lock/` to your HA `/config/custom_components/`
-2. Restart Home Assistant
-3. Go to **Settings → Integrations → Add Integration** → search **Tuya LA-T01 Smart Lock**
-4. Enter your **Client ID** and **Client Secret**
+## Entities
 
-## Entities created
+| Entity | Notes |
+|--------|-------|
+| `lock` | Lock and unlock. State comes from the `lock_motor_state` data point. |
+| `sensor` Battery | From `residual_electricity`. |
+| `binary_sensor` Door | From `closed_opened`. Only if the Lock reports it. |
+| `binary_sensor` Double locked | From `reverse_lock`. Only if the Lock reports it. |
 
-Each discovered lock gets:
+State is polled (default every 60 s, 30–300 s in the integration's options), so changes made outside Home Assistant show up late. The device list is read once when the integration loads; reload the integration after adding a Lock.
 
-| Entity | Type | Description |
-|--------|------|-------------|
-| `lock.<name>` | Lock | Open/Unlock via Smart Lock API |
+## How locking works
 
-### Extra attributes on lock entity
-
-- `battery_%` — remaining battery
-- `reverse_lock` — bolted from inside (guests present)
-- `manual_lock` — manually deadbolted
-- `auto_lock` — auto-lock enabled
-- `auto_lock_time` — auto-lock delay (seconds)
-- `arming_switch` — alarm armed
-- `beep_volume` — audible feedback level
-- `alarm_type` — last alarm type
-- `device_id` — Tuya device ID
-
-## How unlock works
-
-The LA-T01 uses a **ticket-based password-free unlock** flow:
+Each command first requests a single-use ticket, then operates the Lock with it:
 
 ```
-POST /v1.0/devices/{id}/door-lock/password-free/ticket
-→ { ticket_key, ticket_id }
-
-POST /v1.0/devices/{id}/door-lock/password-free/open-door
-body: { ticket_key, ticket_id }
-→ { success: true }
+POST /v1.0/devices/{id}/door-lock/password-ticket              → { ticket_id }
+POST /v1.0/smart-lock/devices/{id}/password-free/door-operate  { ticket_id, open: true|false }
 ```
 
-The lock receives the command via Tuya Cloud → BLE Gateway → lock motor.
+A command the cloud rejects raises an error in Home Assistant.
 
 ## Supported hardware
 
-| Device | Product ID | Category |
-|--------|-----------|----------|
-| LA-T01 | `8gza4o8a` | `jtmspro` |
-| LA-T01 (variant) | `99gv5nmz` | `jtmspro` |
+Any `jtmspro` Lock should work. Verified models have passed a [live test](#live-tests) that unlocked and re-locked a real Lock.
 
-Any `jtmspro` category device on Tuya Cloud should work.
+| Product ID | Model | Verified |
+|------------|-------|----------|
+| `8gza4o8a` | LA-T01 | by upstream |
+| `99gv5nmz` | LA-T01 (variant) | by upstream |
+| `qxjx5jms` | WUN-AXDL-261 | not yet |
 
-## Automations example
+## Development
 
-```yaml
-automation:
-  - alias: "Unlock front door for guest"
-    trigger:
-      - platform: state
-        entity_id: input_boolean.guest_arriving
-        to: "on"
-    action:
-      - service: lock.unlock
-        target:
-          entity_id: lock.norte
+Tests run in Docker (`python:3.13`):
+
+```
+scripts/test.sh                 # offline unit tests
 ```
 
-## Home Assistant Automation with time window
+### Live tests
 
-```yaml
-automation:
-  - alias: "Auto-unlock at check-in time"
-    trigger:
-      - platform: time
-        at: "15:00:00"
-    condition:
-      - condition: state
-        entity_id: calendar.reservations
-        state: "on"
-    action:
-      - service: lock.unlock
-        target:
-          entity_id: lock.norte
+These talk to Tuya Cloud and **physically unlock then re-lock a real Lock**. They are never part of the default run and use only environment variables (nothing is stored):
+
 ```
+TUYA_ACCESS_ID=... TUYA_ACCESS_SECRET=... TUYA_REGION=eu TUYA_DEVICE_ID=... \
+  scripts/test.sh -m live -s
+```
+
+`TUYA_REGION` is one of `cn`, `us-west`, `us-east`, `eu`, `eu-west`, `in`. The tests print the Lock's data points; the physical cycle refuses to start unless the Lock reports Locked, and always attempts to lock on exit.
 
 ## License
 
-MIT
+None yet. Upstream has not published a license.

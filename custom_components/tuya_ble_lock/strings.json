@@ -1,0 +1,50 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tuya BLE Lock (Cloud)",
+        "description": "Use the Access ID and Access Secret from your Tuya IoT project (iot.tuya.com → Cloud → your project → Overview). The project must be subscribed to the Smart Lock API.",
+        "data": {
+          "client_id": "Access ID",
+          "client_secret": "Access Secret",
+          "region": "Region"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach Tuya Cloud.",
+      "invalid_auth": "Tuya rejected the Access ID / Secret. Check them and the Region."
+    },
+    "abort": {
+      "already_configured": "This Tuya project is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "poll_interval": "Poll interval"
+        }
+      }
+    }
+  },
+  "selector": {
+    "region": {
+      "options": {
+        "cn": "China",
+        "us-west": "Western America",
+        "us-east": "Eastern America",
+        "eu": "Central Europe",
+        "eu-west": "Western Europe",
+        "in": "India"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "double_locked": {
+        "name": "Double locked"
+      }
+    }
+  }
+}
